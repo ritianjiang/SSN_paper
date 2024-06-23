@@ -1,0 +1,58 @@
+---
+title: "Dosage sensitivity analysis of the genes in age-related losing interactions"
+output: html_notebook
+---
+
+Collins et al ., present a beautiful work on [Cell](https://www.cell.com/cell/fulltext/S0092-8674(22)00788-7).They Discovered hundreds of rare CNV-disease associations across 54 disorders, and identified 3,635 highly dosage sensitive genes by scoring the orgnism's tolorence to thier CNV.
+
+Due to the essence of the losing interaction is dosage imbalance, we wondered if the genes in age-related losing interactions would be more harmful when their dosage changed due to CNV events. 
+
+We downloaded the data from [Zenodo](https://zenodo.org/record/6347673). Firstly, we will retrieve the dosage sensitive score of genes in age-related losing interactions to test whether they have a higher/lower CNV sensitive score (risk) than others. 
+
+1.Setup the environment and load the tissue names
+```{r}
+setwd("/home/wanght/data/CPM_methods/Dosage")
+library(data.table)
+library(stringr)
+library(magrittr)
+str_split(list.dirs("../Exps/")[2:27],pattern = "//",simplify = T)[,2] -> tissues
+tissues
+```
+
+## The Dosage scores
+2.load the dosage table
+```{r}
+Dosage<-fread("Collins_rCNV_2022.dosage_sensitivity_scores.tsv.gz")
+setkey(Dosage,"#gene")
+
+#Define a function to retrieve the pHaplo and pTriplo from losing interact of tissues
+#Input: tissue
+#Output: the pHaplo/pTriplo scores of genes in OR not in losing interactions (LI)
+
+dosage_score<-function(tissue){
+  file_path<-paste0("../Result/", tissue,"/Result.RData")
+  cat(tissue);cat(" ")
+  load(file_path)
+  tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
+  LI_genes<-str_split(tissue_results_sig$edges,pattern = "_",simplify = T)[,1] %>% unique
+  nonLI_genes<-setdiff(str_split(tissue_results$edges,pattern = "_",simplify = T)[,1] %>% unique,
+                       LI_genes)
+  LI_genes_score<-Dosage[intersect(LI_genes,Dosage$`#gene`),];LI_genes_score$type<-"LI_genes"
+  nonLI_genes_score<-Dosage[intersect(nonLI_genes,Dosage$`#gene`),];nonLI_genes_score$type<-"nonLI_genes"
+  result<-rbind(LI_genes_score,nonLI_genes_score);result$tissue<-tissue
+  return(result)
+}
+
+head(dosage_score(tissues[1]))
+```
+
+We then calculated the score among all tissues.
+```{r}
+Dosage_result<-lapply(tissues,
+                      dosage_score)
+names(Dosage_result)<-tissues
+saveRDS(Dosage_result,file="Dosage_result_of_ARLI.RDS")
+```
+
+
+
