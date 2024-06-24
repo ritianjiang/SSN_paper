@@ -54,5 +54,67 @@ names(Dosage_result)<-tissues
 saveRDS(Dosage_result,file="Dosage_result_of_ARLI.RDS")
 ```
 
+For each tissue, we can test whether the genes in ARLI will have higher risk score.
+```{r}
+library(ggpubr)
+library(gridExtra)
+N<-1 # The Nth tissue
+cat(tissues[N])
+
+df<-Dosage_result[[N]]
+
+p_hap <- ggboxplot(df, x = "type", y = "pHaplo",
+                color = "type", palette =c("#FA0000", "#6666FF"),title = tissues[N])+
+  stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+  theme(legend.position = "none")
+p_tri <- ggboxplot(df, x = "type", y = "pTriplo",
+                color = "type", palette =c("#FA0000", "#6666FF"))+
+  stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+  theme(legend.position = "none")
+grid.arrange(p_hap,p_tri,nrow=1)
+
+#g<-arrangeGrob(p_hap,p_tri,nrow = 1)
+#ggsave("Adipose.pdf",g)
+```
+
+```{r}
+#OK, now we made them into a function
+plotDosage<-function(N){
+  df<-Dosage_result[[N]]
+
+  p_hap <- ggboxplot(df, x = "type", y = "pHaplo",
+                     color = "type", palette =c("#FA0000", "#6666FF"),title = tissues[N])+
+           stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+           theme(legend.position = "none")
+  p_tri <- ggboxplot(df, x = "type", y = "pTriplo",
+                color = "type", palette =c("#FA0000", "#6666FF"))+
+            stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+            theme(legend.position = "none")
+  #grid.arrange(p_hap,p_tri,nrow=1)
+
+  g<-arrangeGrob(p_hap,p_tri,nrow = 1)
+  ggsave(paste0(tissues[N],".pdf"),g)
+}
+for(i in 1:length(tissues)){
+    plotDosage(i)  
+}
+```
+
+```{r}
+D2<-do.call("rbind",Dosage_result)
+ggboxplot(D2, x = "type", y = "pHaplo",
+                     color = "type", palette =c("#FA0000", "#6666FF"))+ylim(c(0,1.5))+
+           stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))->p2
+facet(p2,facet.by = "tissue",scales = "free_x")
+```
+
+
+Another plot method by ECDF cumulative curves
+```{r}
+ggecdf(D2,color="type",x="pTriplo",palette =c("#FA0000", "#6666FF"))+
+  theme(axis.text = element_text(size=10))->p
+facet(p,facet.by = "tissue",scales = "free_x")
+
+```
 
 
