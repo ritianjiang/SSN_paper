@@ -14,16 +14,35 @@ setkey(tissue_cancer,"TCGA_code")
 cancers<-unique(tissue_cancer$TCGA_code)
 
 TCGA_CNV<-fread("TCGA.PANCAN.sampleMap_Gistic2_CopyNumber_Gistic2_all_thresholded.by_genes.gz")
+setkey(TCGA_CNV,"Sample")
 
 survival_data<-fread("Survival_SupplementalTable_S1_20171025_xena_sp")
+setkey(survival_data,"cancer type abbreviation")
 ```
 
 ##The survival status of samples with/wo CNV of genes involved in ARLI
 2. Firstly, we focus on the CNV event that occurred in genes whom involved in the corresponding tissue's ARLI. For each cancer, we retrieved the matched tissue's ARLI, and divide the patients according to their tumor CNV events: one group with CNV in ARLI genes, the other not.
 ```{r}
+library(stringr)
+
 #Define the function to divide the patients
 divide_cnv<-function(tcga){
+  tissue<-tissue_cancer[tcga]$Tissue
+  file_path<-paste0("../Result/", tissue,"/Result.RData")
+  load(file_path)
   
+  tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
+  LI_genes<-str_split(tissue_results_sig$edges,pattern = "_",simplify = T)[,1] %>% unique
+  
+  surv_data<-survival_data[tcga,c("sample","_PATIENT",
+                                  "OS","OS.time","DSS","DSS.time","DFI","DFI.time","PFI","PFI.time")]
+  surv_data<-surv_data[surv_data$sample %in% colnames(TCGA_CNV),]
+  cnv_data<-TCGA_CNV[LI_genes] %>% select(surv_data$sample)
+  apply(cnv_data,2,function(x){return(sum(x!=0,na.rm = T))})->surv_data$CNV_ARLI
+  
+  return(surv_data)
 }
+
+TCGA_cnv_ARLI_res<-lapply(cancers, divide_cnv)
 ```
 
