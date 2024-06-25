@@ -117,4 +117,69 @@ facet(p,facet.by = "tissue",scales = "free_x")
 
 ```
 
+##CNV-disease association
+We have demonstrated that the Risk of dosage may be higher in ARLI genes. Then we wanna test whether the ARLI's dosage may be associated with some disorders
+```{r}
+library(dplyr)
+Gene_asso<-read.table("Gene_associations_HPO.txt",sep = "\t",header = T)
+phenotypes<-str_split(Gene_asso$Associated.HPOs,pattern = ";") %>% unlist %>% unique
+phenos<-read.table("Collins_rCNV_2022.gene_association_sumstats/Phenotypes.txt",sep="\t",
+                   header=T)
 
+#Define the dosage association enrichment calculate functions
+enrich_assoc<-function(pheno){
+  cat(timestamp());cat("\n")
+  dosage_gene<-Gene_asso[grep(Gene_asso$Associated.HPOs,pattern=pheno),] %>% 
+    select(2:3) %>% apply(1,str_c,sep=";") %>% 
+    str_split(pattern = ";") %>% unlist %>% unique
+  dosage_gene<-dosage_gene[dosage_gene!="-"]
+  
+  res<-tibble(Tissue = tissues, OR=0, p=-1)
+  for(i in 1:nrow(res)){
+    #cat(timestamp())
+    file_path<-paste0("../Result/", res[i,]$Tissue,"/Result.RData")
+    cat(i);cat(" ")
+    load(file_path)
+    tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
+    LI_genes<-str_split(tissue_results_sig$edges,pattern = "_",simplify = T)[,1] %>% unique
+    nonLI_genes<-setdiff(str_split(tissue_results$edges,pattern = "_",simplify = T)[,1] %>% unique,
+                         LI_genes)
+    tmpT<-tibble(genes = c(LI_genes, nonLI_genes),
+                 inte = c(rep("LI",length(LI_genes)),
+                          rep("nonLI",length(nonLI_genes))))
+    tmpT$associat<-"non-Associated";tmpT[tmpT$genes %in% dosage_gene,]$associat<-"Associated"
+    
+    try({
+      fit<-table(tmpT$inte,tmpT$associat) %>% fisher.test()
+      fit$p.value->res[i,]$p; fit$estimate->res[i,]$OR},
+      silent = T)
+  }
+  
+  cat(timestamp())
+  
+  res$phenotype<-pheno
+  return(res)
+}
+
+phenotypes<-phenotypes[phenotypes!="UNKNOWN"]
+Enrich_res_gwas<-lapply(phenotypes, enrich_assoc)
+save(Enrich_res_gwas,file="Enrich_res_rCNV_gwas.RData")
+Enrich_res2<-do.call("rbind",Enrich_res_gwas)
+```
+
+```{r}
+Enrich_res2<-do.call("rbind",Enrich_res_gwas)
+Enrich_res2<-Enrich_res2[Enrich_res2$p>0,]
+Enrich_res2[Enrich_res2$OR>100,]$OR<-100
+rownames(phenos)<-phenos$HPO
+phenos[phenotypes,]$Description
+phenos[phenotypes,]$Description->pss
+ggplot(Enrich_res_gwas[[6]],aes(x=Tissue,y=OR,fill=p<0.05))+
+  scale_fill_manual(values=c("FALSE"="grey","TRUE"="red"))+
+  geom_bar(stat = "identity") + coord_flip()+
+  theme_classic()+ggtitle(pss[6])
+
+ggplot(Enrich_res2,aes(x=Tissue,y=OR,fill=p<0.05))+
+  geom_bar(stat = "identity") + 
+  coord_flip()+theme_classic()+facet_wrap(~phenotype)
+```
