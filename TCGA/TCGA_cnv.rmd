@@ -1,0 +1,29 @@
+---
+title: "TCGA CNV of the genes in age-related losing interactions"
+output: html_notebook
+---
+
+1.Setup the environment and load the tissue names
+```{r}
+library(dplyr)
+library(data.table)
+library(magrittr)
+setwd("/data/user_data/wanght/CPM_methods/TCGA")
+tissue_cancer<-fread("Cancer_tissue",header = T)
+setkey(tissue_cancer,"TCGA_code")
+cancers<-unique(tissue_cancer$TCGA_code)
+
+TCGA_CNV<-fread("TCGA.PANCAN.sampleMap_Gistic2_CopyNumber_Gistic2_all_thresholded.by_genes.gz")
+
+survival_data<-fread("Survival_SupplementalTable_S1_20171025_xena_sp")
+```
+
+##The survival status of samples with/wo CNV of genes involved in ARLI
+2. Firstly, we focus on the CNV event that occurred in genes whom involved in the corresponding tissue's ARLI. For each cancer, we retrieved the matched tissue's ARLI, and divide the patients according to their tumor CNV events: one group with CNV in ARLI genes, the other not.
+```{r}
+#Define the function to divide the patients
+divide_cnv<-function(tcga){
+  
+}
+```
+
