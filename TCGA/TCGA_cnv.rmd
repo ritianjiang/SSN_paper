@@ -9,7 +9,10 @@ library(dplyr)
 library(data.table)
 library(magrittr)
 setwd("/data/user_data/wanght/CPM_methods/TCGA")
+str_split(list.dirs("../Exps/")[2:27],pattern = "//",simplify = T)[,2] -> tissues
+
 tissue_cancer<-fread("Cancer_tissue",header = T)
+tissue_cancer<-tissue_cancer[tissue_cancer$Tissue %in% tissues,]
 setkey(tissue_cancer,"TCGA_code")
 cancers<-unique(tissue_cancer$TCGA_code)
 
@@ -18,6 +21,8 @@ setkey(TCGA_CNV,"Sample")
 
 survival_data<-fread("Survival_SupplementalTable_S1_20171025_xena_sp")
 setkey(survival_data,"cancer type abbreviation")
+
+
 ```
 
 ##The survival status of samples with/wo CNV of genes involved in ARLI
@@ -39,6 +44,9 @@ divide_cnv<-function(tcga){
   surv_data<-surv_data[surv_data$sample %in% colnames(TCGA_CNV),]
   cnv_data<-TCGA_CNV[LI_genes] %>% select(surv_data$sample)
   apply(cnv_data,2,function(x){return(sum(x!=0,na.rm = T))})->surv_data$CNV_ARLI
+  apply(TCGA_CNV%>% select(surv_data$sample),
+        2,
+        function(x){return(sum(x!=0,na.rm = T))})->surv_data$CNV_total
   
   return(surv_data)
 }
