@@ -54,3 +54,29 @@ divide_cnv<-function(tcga){
 TCGA_cnv_ARLI_res<-lapply(cancers, divide_cnv)
 ```
 
+Then, let's perform the survival analysis for samples with more normalized ARLI genes CNV
+```{r}
+library(survival)
+library(survminer)
+
+tmpSurvdata<-TCGA_cnv_ARLI_res[[1]]
+tmpSurvdata$risk<-ifelse(test = tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total > 
+                           median(tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total,na.rm = T),
+                         yes = "High", no ="Low")
+survFit<-survfit(Surv(OS.time,OS==1)~risk,data=tmpSurvdata)
+ggsurvplot(survFit,data=tmpSurvdata,conf.int = F,
+           risk.table = F,pval=T)+labs(title=tissue_cancer[tissue_cancer$TCGA_code == cancers[1],]$Cancer_description %>%
+                                         str_to_title())
+
+tmp_plot<-function(num){
+  tmpSurvdata<-TCGA_cnv_ARLI_res[[num]]
+  tmpSurvdata$risk<-ifelse(test = tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total > 
+                             median(tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total,na.rm = T),
+                           yes = "High", no ="Low")
+  survFit<-survfit(Surv(DSS.time,DSS==1)~risk,data=tmpSurvdata)
+  ggsurvplot(survFit,data=tmpSurvdata,conf.int = F,
+             risk.table = F,pval=T,palette = c("red","skyblue"))+
+    labs(title=tissue_cancer[tissue_cancer$TCGA_code == cancers[num],]$Cancer_description %>% str_to_title())
+}
+```
+
