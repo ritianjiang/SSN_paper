@@ -80,3 +80,75 @@ tmp_plot<-function(num){
 }
 ```
 
+##The survival status of samples with gene imbalanced dosage involved in ARLI
+We next sought to investigate whether the balanced dosage of ARLI genes will have better prognosis. We only see the top ARLI
+```{r}
+dosage_cnv<-function(tcga){
+  tissue<-tissue_cancer[tcga]$Tissue
+  file_path<-paste0("../Result/", tissue,"/Result.RData")
+  load(file_path)
+  
+  tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
+  LI_genes<-tissue_results_sig[tissue_results_sig %$% 
+                                 tau %>% 
+                                 order(decreasing = T) %>% 
+                                 head(1),]$edges %>% str_split(pattern = "_",simplify = T) %>% as.vector()
+
+  
+  surv_data<-survival_data[tcga,c("sample","_PATIENT",
+                                  "OS","OS.time","DSS","DSS.time","DFI","DFI.time","PFI","PFI.time")]
+  surv_data<-surv_data[surv_data$sample %in% colnames(TCGA_CNV),]
+  cnv_data<-TCGA_CNV[LI_genes] %>% select(surv_data$sample)
+  apply(cnv_data,2,function(x){return(ifelse(x[1]!=x[2],yes = "Imbalance",no = "balance"))})->surv_data$CNV_ARLI
+  
+  return(surv_data)
+}
+
+TCGA_dosage_ARLI_res<-lapply(cancers, dosage_cnv)
+
+tmp_plot<-function(num){
+  tmpSurvdata<-TCGA_dosage_ARLI_res[[num]]
+  survFit<-survfit(Surv(PFI.time,PFI==1)~CNV_ARLI,data=tmpSurvdata)
+  ggsurvplot(survFit,data=tmpSurvdata,conf.int = F,
+             risk.table = F,pval=T,palette = c("skyblue","red"))+
+    labs(title=tissue_cancer[tissue_cancer$TCGA_code == cancers[num],]$Cancer_description %>% str_to_title())
+}
+```
+We now see the top ARLI
+```{r}
+
+dosage_cnv_all<-function(tcga){
+  tissue<-tissue_cancer[tcga]$Tissue
+  file_path<-paste0("../Result/", tissue,"/Result.RData")
+  load(file_path)
+  
+  tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
+  LI_genes<-tissue_results_sig$edges %>% str_split(pattern = "_",simplify = T) 
+  LI_genes_2<-LI_genes[,1] %>% unique
+  
+  surv_data<-survival_data[tcga,c("sample","_PATIENT",
+                                  "OS","OS.time","DSS","DSS.time","DFI","DFI.time","PFI","PFI.time")]
+  surv_data<-surv_data[surv_data$sample %in% colnames(TCGA_CNV),]
+  cnv_data<-TCGA_CNV[LI_genes_2] %>% select(c("Sample",surv_data$sample))
+  setkey(cnv_data,"Sample")
+  tmp<-lapply(1:nrow(LI_genes),FUN = function(x){
+    return(cnv_data[LI_genes[x,][1],-1] != cnv_data[LI_genes[x,][2],-1])
+  }) %>% do.call(what="rbind")
+  
+  surv_data$dosage_event<-apply(tmp,2,sum,na.rm=T)
+  return(surv_data)
+}
+
+TCGA_dosage_ARLI_res_all<-lapply(cancers, dosage_cnv_all)
+
+tmp_plot<-function(num){
+  tmpSurvdata<-TCGA_dosage_ARLI_res_all[[num]]
+  tmpSurvdata$risk<-ifelse(test = tmpSurvdata$dosage_event > 
+                             median(tmpSurvdata$dosage_event,na.rm = T),
+                           yes = "High", no ="Low")
+  survFit<-survfit(Surv(OS.time,OS==1)~CNV_ARLI,data=tmpSurvdata)
+  ggsurvplot(survFit,data=tmpSurvdata,conf.int = F,
+             risk.table = F,pval=T,palette = c("skyblue","red"))+
+    labs(title=tissue_cancer[tissue_cancer$TCGA_code == cancers[num],]$Cancer_description %>% str_to_title())
+}
+```
