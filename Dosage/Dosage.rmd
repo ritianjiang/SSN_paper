@@ -1,109 +1,185 @@
 ---
-title: "TCGA CNV of the genes in age-related losing interactions"
+title: "Dosage sensitivity analysis of the genes in age-related losing interactions"
 output: html_notebook
 ---
 
+Collins et al ., present a beautiful work on [Cell](https://www.cell.com/cell/fulltext/S0092-8674(22)00788-7).They Discovered hundreds of rare CNV-disease associations across 54 disorders, and identified 3,635 highly dosage sensitive genes by scoring the orgnism's tolorence to thier CNV.
+
+Due to the essence of the losing interaction is dosage imbalance, we wondered if the genes in age-related losing interactions would be more harmful when their dosage changed due to CNV events. 
+
+We downloaded the data from [Zenodo](https://zenodo.org/record/6347673). Firstly, we will retrieve the dosage sensitive score of genes in age-related losing interactions to test whether they have a higher/lower CNV sensitive score (risk) than others. 
+
 1.Setup the environment and load the tissue names
 ```{r}
-library(dplyr)
+setwd("/home/wanght/data/CPM_methods/Dosage")
 library(data.table)
+library(stringr)
 library(magrittr)
-setwd("/data/user_data/wanght/CPM_methods/TCGA")
 str_split(list.dirs("../Exps/")[2:27],pattern = "//",simplify = T)[,2] -> tissues
-
-tissue_cancer<-fread("Cancer_tissue",header = T)
-tissue_cancer<-tissue_cancer[tissue_cancer$Tissue %in% tissues,]
-setkey(tissue_cancer,"TCGA_code")
-cancers<-unique(tissue_cancer$TCGA_code)
-
-TCGA_CNV<-fread("TCGA.PANCAN.sampleMap_Gistic2_CopyNumber_Gistic2_all_thresholded.by_genes.gz")
-setkey(TCGA_CNV,"Sample")
-
-survival_data<-fread("Survival_SupplementalTable_S1_20171025_xena_sp")
-setkey(survival_data,"cancer type abbreviation")
-
-
+tissues
 ```
 
-##The survival status of samples with/wo CNV of genes involved in ARLI
-2. Firstly, we focus on the CNV event that occurred in genes whom involved in the corresponding tissue's ARLI. For each cancer, we retrieved the matched tissue's ARLI, and divide the patients according to their tumor CNV events: one group with CNV in ARLI genes, the other not.
+## The Dosage scores
+2.load the dosage table
 ```{r}
-library(stringr)
+Dosage<-fread("Collins_rCNV_2022.dosage_sensitivity_scores.tsv.gz")
+setkey(Dosage,"#gene")
 
-#Define the function to divide the patients
-divide_cnv<-function(tcga){
-  tissue<-tissue_cancer[tcga]$Tissue
+#Define a function to retrieve the pHaplo and pTriplo from losing interact of tissues
+#Input: tissue
+#Output: the pHaplo/pTriplo scores of genes in OR not in losing interactions (LI)
+
+dosage_score<-function(tissue){
   file_path<-paste0("../Result/", tissue,"/Result.RData")
+  cat(tissue);cat(" ")
   load(file_path)
-  
   tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
   LI_genes<-str_split(tissue_results_sig$edges,pattern = "_",simplify = T)[,1] %>% unique
-  
-  surv_data<-survival_data[tcga,c("sample","_PATIENT",
-                                  "OS","OS.time","DSS","DSS.time","DFI","DFI.time","PFI","PFI.time")]
-  surv_data<-surv_data[surv_data$sample %in% colnames(TCGA_CNV),]
-  cnv_data<-TCGA_CNV[LI_genes] %>% select(surv_data$sample)
-  apply(cnv_data,2,function(x){return(sum(x!=0,na.rm = T))})->surv_data$CNV_ARLI
-  apply(TCGA_CNV%>% select(surv_data$sample),
-        2,
-        function(x){return(sum(x!=0,na.rm = T))})->surv_data$CNV_total
-  
-  return(surv_data)
+  nonLI_genes<-setdiff(str_split(tissue_results$edges,pattern = "_",simplify = T)[,1] %>% unique,
+                       LI_genes)
+  LI_genes_score<-Dosage[intersect(LI_genes,Dosage$`#gene`),];LI_genes_score$type<-"LI_genes"
+  nonLI_genes_score<-Dosage[intersect(nonLI_genes,Dosage$`#gene`),];nonLI_genes_score$type<-"nonLI_genes"
+  result<-rbind(LI_genes_score,nonLI_genes_score);result$tissue<-tissue
+  return(result)
 }
 
-TCGA_cnv_ARLI_res<-lapply(cancers, divide_cnv)
+head(dosage_score(tissues[1]))
 ```
 
-Then, let's perform the survival analysis for samples with more normalized ARLI genes CNV
+We then calculated the score among all tissues.
 ```{r}
-library(survival)
-library(survminer)
-
-tmpSurvdata<-TCGA_cnv_ARLI_res[[1]]
-tmpSurvdata$risk<-ifelse(test = tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total > 
-                           median(tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total,na.rm = T),
-                         yes = "High", no ="Low")
-survFit<-survfit(Surv(OS.time,OS==1)~risk,data=tmpSurvdata)
-ggsurvplot(survFit,data=tmpSurvdata,conf.int = F,
-           risk.table = F,pval=T)+labs(title=tissue_cancer[tissue_cancer$TCGA_code == cancers[1],]$Cancer_description %>%
-                                         str_to_title())
-
-tmp_plot<-function(num){
-  tmpSurvdata<-TCGA_cnv_ARLI_res[[num]]
-  tmpSurvdata$risk<-ifelse(test = tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total > 
-                             median(tmpSurvdata$CNV_ARLI/tmpSurvdata$CNV_total,na.rm = T),
-                           yes = "High", no ="Low")
-  survFit<-survfit(Surv(DSS.time,DSS==1)~risk,data=tmpSurvdata)
-  ggsurvplot(survFit,data=tmpSurvdata,conf.int = F,
-             risk.table = F,pval=T,palette = c("red","skyblue"))+
-    labs(title=tissue_cancer[tissue_cancer$TCGA_code == cancers[num],]$Cancer_description %>% str_to_title())
-}
+Dosage_result<-lapply(tissues,
+                      dosage_score)
+names(Dosage_result)<-tissues
+saveRDS(Dosage_result,file="Dosage_result_of_ARLI.RDS")
 ```
 
-##The survival status of samples with gene imbalanced dosage involved in ARLI
-We next sought to investigate whether the balanced dosage of ARLI genes will have better prognosis. We only see the top ARLI
+For each tissue, we can test whether the genes in ARLI will have higher risk score.
 ```{r}
-dosage_cnv<-function(tcga){
-  tissue<-tissue_cancer[tcga]$Tissue
-  file_path<-paste0("../Result/", tissue,"/Result.RData")
-  load(file_path)
-  
-  tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
-  LI_genes<-tissue_results_sig[tissue_results_sig %$% 
-                                 tau %>% 
-                                 order(decreasing = T) %>% 
-                                 head(1),]$edges %>% str_split(pattern = "_",simplify = T) %>% as.vector()
+library(ggpubr)
+library(gridExtra)
+N<-1 # The Nth tissue
+cat(tissues[N])
 
-  
-  surv_data<-survival_data[tcga,c("sample","_PATIENT",
-                                  "OS","OS.time","DSS","DSS.time","DFI","DFI.time","PFI","PFI.time")]
-  surv_data<-surv_data[surv_data$sample %in% colnames(TCGA_CNV),]
-  cnv_data<-TCGA_CNV[LI_genes] %>% select(surv_data$sample)
-  apply(cnv_data,2,function(x){return(ifelse(x[1]!=x[2],yes = "Imbalance",no = "balance"))})->surv_data$CNV_ARLI
-  
-  return(surv_data)
-}
+df<-Dosage_result[[N]]
 
-TCGA_dosage_ARLI_res<-lapply(cancers, dosage_cnv)
+p_hap <- ggboxplot(df, x = "type", y = "pHaplo",
+                color = "type", palette =c("#FA0000", "#6666FF"),title = tissues[N])+
+  stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+  theme(legend.position = "none")
+p_tri <- ggboxplot(df, x = "type", y = "pTriplo",
+                color = "type", palette =c("#FA0000", "#6666FF"))+
+  stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+  theme(legend.position = "none")
+grid.arrange(p_hap,p_tri,nrow=1)
+
+#g<-arrangeGrob(p_hap,p_tri,nrow = 1)
+#ggsave("Adipose.pdf",g)
 ```
 
+```{r}
+#OK, now we made them into a function
+plotDosage<-function(N){
+  df<-Dosage_result[[N]]
+
+  p_hap <- ggboxplot(df, x = "type", y = "pHaplo",
+                     color = "type", palette =c("#FA0000", "#6666FF"),title = tissues[N])+
+           stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+           theme(legend.position = "none")
+  p_tri <- ggboxplot(df, x = "type", y = "pTriplo",
+                color = "type", palette =c("#FA0000", "#6666FF"))+
+            stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))+
+            theme(legend.position = "none")
+  #grid.arrange(p_hap,p_tri,nrow=1)
+
+  g<-arrangeGrob(p_hap,p_tri,nrow = 1)
+  ggsave(paste0(tissues[N],".pdf"),g)
+}
+for(i in 1:length(tissues)){
+    plotDosage(i)  
+}
+```
+
+```{r}
+D2<-do.call("rbind",Dosage_result)
+ggboxplot(D2, x = "type", y = "pHaplo",
+                     color = "type", palette =c("#FA0000", "#6666FF"))+ylim(c(0,1.5))+
+           stat_compare_means(comparisons = list(c("LI_genes","nonLI_genes")))->p2
+facet(p2,facet.by = "tissue",scales = "free_x")
+```
+
+
+Another plot method by ECDF cumulative curves
+```{r}
+ggecdf(D2,color="type",x="pTriplo",palette =c("#FA0000", "#6666FF"))+
+  theme(axis.text = element_text(size=10))->p
+facet(p,facet.by = "tissue",scales = "free_x")
+
+```
+
+##CNV-disease association
+We have demonstrated that the Risk of dosage may be higher in ARLI genes. Then we wanna test whether the ARLI's dosage may be associated with some disorders
+```{r}
+library(dplyr)
+Gene_asso<-read.table("Gene_associations_HPO.txt",sep = "\t",header = T)
+phenotypes<-str_split(Gene_asso$Associated.HPOs,pattern = ";") %>% unlist %>% unique
+phenos<-read.table("Collins_rCNV_2022.gene_association_sumstats/Phenotypes.txt",sep="\t",
+                   header=T)
+
+#Define the dosage association enrichment calculate functions
+enrich_assoc<-function(pheno){
+  cat(timestamp());cat("\n")
+  dosage_gene<-Gene_asso[grep(Gene_asso$Associated.HPOs,pattern=pheno),] %>% 
+    select(2:3) %>% apply(1,str_c,sep=";") %>% 
+    str_split(pattern = ";") %>% unlist %>% unique
+  dosage_gene<-dosage_gene[dosage_gene!="-"]
+  
+  res<-tibble(Tissue = tissues, OR=0, p=-1)
+  for(i in 1:nrow(res)){
+    #cat(timestamp())
+    file_path<-paste0("../Result/", res[i,]$Tissue,"/Result.RData")
+    cat(i);cat(" ")
+    load(file_path)
+    tissue_results_sig<-tissue_results[tissue_results$p<0.001 & tissue_results$tau>0,]
+    LI_genes<-str_split(tissue_results_sig$edges,pattern = "_",simplify = T)[,1] %>% unique
+    nonLI_genes<-setdiff(str_split(tissue_results$edges,pattern = "_",simplify = T)[,1] %>% unique,
+                         LI_genes)
+    tmpT<-tibble(genes = c(LI_genes, nonLI_genes),
+                 inte = c(rep("LI",length(LI_genes)),
+                          rep("nonLI",length(nonLI_genes))))
+    tmpT$associat<-"non-Associated";tmpT[tmpT$genes %in% dosage_gene,]$associat<-"Associated"
+    
+    try({
+      fit<-table(tmpT$inte,tmpT$associat) %>% fisher.test()
+      fit$p.value->res[i,]$p; fit$estimate->res[i,]$OR},
+      silent = T)
+  }
+  
+  cat(timestamp())
+  
+  res$phenotype<-pheno
+  return(res)
+}
+
+phenotypes<-phenotypes[phenotypes!="UNKNOWN"]
+Enrich_res_gwas<-lapply(phenotypes, enrich_assoc)
+save(Enrich_res_gwas,file="Enrich_res_rCNV_gwas.RData")
+Enrich_res2<-do.call("rbind",Enrich_res_gwas)
+```
+
+```{r}
+Enrich_res2<-do.call("rbind",Enrich_res_gwas)
+Enrich_res2<-Enrich_res2[Enrich_res2$p>0,]
+Enrich_res2[Enrich_res2$OR>100,]$OR<-100
+rownames(phenos)<-phenos$HPO
+phenos[phenotypes,]$Description
+phenos[phenotypes,]$Description->pss
+ggplot(Enrich_res_gwas[[6]],aes(x=Tissue,y=OR,fill=p<0.05))+
+  scale_fill_manual(values=c("FALSE"="grey","TRUE"="red"))+
+  geom_bar(stat = "identity") + coord_flip()+
+  theme_classic()+ggtitle(pss[6])
+
+ggplot(Enrich_res2,aes(x=Tissue,y=OR,fill=p<0.05))+
+  geom_bar(stat = "identity") + 
+  coord_flip()+theme_classic()+facet_wrap(~phenotype)
+```
